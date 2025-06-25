@@ -1,4 +1,4 @@
-import { StyleSheet, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 // Dependencias de navegación
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -17,10 +17,7 @@ const Tab = createBottomTabNavigator();
 // Colores del tema
 const colors = {
   primary: '#667eea',
-  primaryDark: '#5a67d8',
-  secondary: '#f093fb',
   background: '#ffffff',
-  surface: '#f8fafc',
   inactive: '#64748b',
   shadow: '#000000',
   text: '#1e293b',
@@ -101,7 +98,6 @@ export default function App() {
           tabBarItemStyle: {
             paddingVertical: 5,
           },
-          // Animación suave
           tabBarHideOnKeyboard: true,
         })}
       >
@@ -114,18 +110,18 @@ export default function App() {
           }}
         />
         <Tab.Screen 
-          name="Grafica" 
-          component={Graphic}
-          options={{
-            title: 'Análisis',
-            headerShown: true
-          }}
-        />
-        <Tab.Screen 
           name="Ventas" 
           component={Sales}
           options={{
             title: 'Ventas',
+            headerShown: true
+          }}
+        />
+        <Tab.Screen 
+          name="Grafica" 
+          component={Graphic}
+          options={{
+            title: 'Análisis',
             headerShown: true
           }}
         />
@@ -141,16 +137,3 @@ export default function App() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  // Estilos adicionales que puedes usar en tus screens
-  screenContainer: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    paddingBottom: Platform.OS === 'ios' ? 85 : 65, // Espacio para la tab bar
-  },
-});
