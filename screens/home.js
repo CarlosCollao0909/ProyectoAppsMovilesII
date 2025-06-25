@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { db } from '../firebaseconfig';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 // Colores del tema
 const colors = {
@@ -16,16 +18,45 @@ const colors = {
 export default function Home() {
   const [yesterdayIncome, setYesterdayIncome] = useState(0);
   const [totalSalesYesterday, setTotalSalesYesterday] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Aquí cargarías los datos reales desde tu base de datos o AsyncStorage
     loadDashboardData();
   }, []);
 
-  const loadDashboardData = () => {
-    // Simulando datos - aquí conectarías con tu sistema de almacenamiento
-    setYesterdayIncome(1250.50);
-    setTotalSalesYesterday(45); // cantidad de productos vendidos
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      // Calcular la fecha de ayer en zona Bolivia
+      const now = new Date();
+      const boliviaOffset = -4 * 60; // minutos
+      const localUTC = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const boliviaDate = new Date(localUTC + boliviaOffset * 60000);
+      boliviaDate.setDate(boliviaDate.getDate() - 1);
+      const year = boliviaDate.getFullYear();
+      const month = String(boliviaDate.getMonth() + 1).padStart(2, '0');
+      const day = String(boliviaDate.getDate()).padStart(2, '0');
+      const fechaAyer = `${year}-${month}-${day}`;
+      // Consultar ventas de ayer
+      const ventasQuery = query(collection(db, 'ventas'), where('fecha', '==', fechaAyer));
+      const querySnapshot = await getDocs(ventasQuery);
+      let total = 0;
+      let productos = 0;
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        total += data.total || 0;
+        if (Array.isArray(data.productos)) {
+          productos += data.productos.reduce((sum, p) => sum + (p.quantity || 0), 0);
+        }
+      });
+      setYesterdayIncome(total);
+      setTotalSalesYesterday(productos);
+    } catch (e) {
+      setYesterdayIncome(0);
+      setTotalSalesYesterday(0);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatMoney = (amount) => {
@@ -96,9 +127,13 @@ export default function Home() {
                 <Text style={styles.statSubtitlePrimary}>{dates.yesterday}</Text>
               </View>
             </View>
-            <Text style={styles.incomeAmountPrimary}>{formatMoney(yesterdayIncome)}</Text>
+            {loading ? (
+              <Text style={styles.incomeAmountPrimary}>Cargando...</Text>
+            ) : (
+              <Text style={styles.incomeAmountPrimary}>{formatMoney(yesterdayIncome)}</Text>
+            )}
             <Text style={styles.salesCountPrimary}>
-              {totalSalesYesterday} productos vendidos
+              {loading ? 'Cargando...' : `${totalSalesYesterday} productos vendidos`}
             </Text>
           </View>
         </View>

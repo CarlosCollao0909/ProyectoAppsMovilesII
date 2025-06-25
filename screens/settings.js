@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { db } from '../firebaseconfig';
+import { collection, addDoc, getDocs } from 'firebase/firestore';
 
 // Colores del tema (siguiendo el estilo de las otras pantallas)
 const colors = {
@@ -22,20 +24,50 @@ export default function Settings() {
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState(categories[0].value);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleAddProduct = () => {
+  // Leer productos al iniciar
+  React.useEffect(() => {
+    const fetchProducts = async () => {
+      setLoading(true);
+      try {
+        const querySnapshot = await getDocs(collection(db, 'productos'));
+        const productosFirestore = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productosFirestore);
+      } catch (e) {
+        setError('Error al cargar productos');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, []);
+
+  const handleAddProduct = async () => {
     if (!name.trim() || !price.trim() || isNaN(Number(price))) {
       setError('Completa todos los campos correctamente');
       return;
     }
-    setProducts([
-      ...products,
-      { name: name.trim(), price: parseFloat(price), category }
-    ]);
-    setName('');
-    setPrice('');
-    setCategory(categories[0].value);
     setError('');
+    setLoading(true);
+    try {
+      const docRef = await addDoc(collection(db, 'productos'), {
+        name: name.trim(),
+        price: parseFloat(price),
+        category
+      });
+      setProducts([
+        ...products,
+        { id: docRef.id, name: name.trim(), price: parseFloat(price), category }
+      ]);
+      setName('');
+      setPrice('');
+      setCategory(categories[0].value);
+    } catch (e) {
+      setError('Error al guardar el producto');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -90,7 +122,12 @@ export default function Settings() {
       </View>
 
       {/* Lista de productos registrados */}
-      {products.length > 0 && (
+      {loading ? (
+        <View style={{ alignItems: 'center', marginVertical: 30 }}>
+          <Ionicons name="hourglass" size={32} color={colors.primary} />
+          <Text style={{ color: colors.text, marginTop: 10 }}>Cargando productos...</Text>
+        </View>
+      ) : products.length > 0 ? (
         <View style={styles.productsListCard}>
           <Text style={styles.productsListTitle}>Productos registrados</Text>
           {products.map((prod, idx) => (
@@ -103,7 +140,7 @@ export default function Settings() {
             </View>
           ))}
         </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 }

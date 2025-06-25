@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BarChart } from 'react-native-chart-kit';
+import { db } from '../firebaseconfig';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 
 // Colores del tema
 const colors = {
@@ -28,35 +30,58 @@ export default function Graphic() {
   const [totalWeekIncome, setTotalWeekIncome] = useState(0);
   const [averageDailyIncome, setAverageDailyIncome] = useState(0);
   const [bestDay, setBestDay] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadGraphicData();
   }, []);
 
-  const loadGraphicData = () => {
-    // Simulando datos de los últimos 7 días
-    const mockData = [
-      { day: 'Lun', date: '18/06', income: 850.50, fullDay: 'Lunes' },
-      { day: 'Mar', date: '19/06', income: 1200.75, fullDay: 'Martes' },
-      { day: 'Mié', date: '20/06', income: 950.25, fullDay: 'Miércoles' },
-      { day: 'Jue', date: '21/06', income: 1450.00, fullDay: 'Jueves' },
-      { day: 'Vie', date: '22/06', income: 1680.50, fullDay: 'Viernes' },
-      { day: 'Sáb', date: '23/06', income: 2100.25, fullDay: 'Sábado' },
-      { day: 'Dom', date: '24/06', income: 1850.75, fullDay: 'Domingo' },
-    ];
-
-    setDailyIncome(mockData);
-
-    // Calcular estadísticas
-    const total = mockData.reduce((sum, day) => sum + day.income, 0);
-    setTotalWeekIncome(total);
-    setAverageDailyIncome(total / mockData.length);
-
-    // Encontrar el mejor día
-    const best = mockData.reduce((max, day) => 
-      day.income > max.income ? day : max
-    );
-    setBestDay(best.fullDay);
+  const loadGraphicData = async () => {
+    setLoading(true);
+    try {
+      // Traer las últimas 7 ventas ordenadas por fecha descendente
+      const ventasQuery = query(collection(db, 'ventas'), orderBy('fecha', 'desc'), limit(14));
+      const querySnapshot = await getDocs(ventasQuery);
+      const ventas = querySnapshot.docs.map(doc => doc.data());
+      // Agrupar por fecha sumando los totales
+      const agrupadas = {};
+      ventas.forEach(v => {
+        if (!agrupadas[v.fecha]) {
+          agrupadas[v.fecha] = 0;
+        }
+        agrupadas[v.fecha] += v.total;
+      });
+      // Convertir a array y ordenar por fecha ascendente
+      const fechas = Object.keys(agrupadas).sort();
+      // Tomar solo las últimas 7 fechas
+      const ultimasFechas = fechas.slice(-7);
+      const diasSemana = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+      const diasSemanaLargos = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      const daily = ultimasFechas.map(f => {
+        const dateObj = new Date(f + 'T00:00:00-04:00');
+        const dayIdx = dateObj.getDay();
+        return {
+          day: diasSemana[dayIdx],
+          date: f.slice(8,10) + '/' + f.slice(5,7),
+          income: agrupadas[f],
+          fullDay: diasSemanaLargos[dayIdx]
+        };
+      });
+      setDailyIncome(daily);
+      // Calcular estadísticas
+      const total = daily.reduce((sum, day) => sum + day.income, 0);
+      setTotalWeekIncome(total);
+      setAverageDailyIncome(daily.length ? total / daily.length : 0);
+      // Mejor día
+      if (daily.length > 0) {
+        const best = daily.reduce((max, day) => day.income > max.income ? day : max);
+        setBestDay(best.fullDay);
+      }
+    } catch (e) {
+      setDailyIncome([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatMoney = (amount) => {
@@ -121,21 +146,27 @@ export default function Graphic() {
         <View style={styles.chartCard}>
           <Text style={styles.chartTitle}>📊 Ingresos por Día</Text>
           <Text style={styles.chartSubtitle}>Últimos 7 días</Text>
-          
-          <View style={styles.chartContainer}>
-            <BarChart
-              data={chartData}
-              width={width - 60} // padding horizontal
-              height={300}
-              chartConfig={chartConfig}
-              style={styles.chart}
-              verticalLabelRotation={0}
-              showValuesOnTopOfBars={true}
-              fromZero={true}
-              segments={4}
-              showBarTops={false}
-            />
-          </View>
+          {loading ? (
+            <View style={{ alignItems: 'center', marginVertical: 30 }}>
+              <Ionicons name="hourglass" size={32} color={colors.primary} />
+              <Text style={{ color: colors.text, marginTop: 10 }}>Cargando datos...</Text>
+            </View>
+          ) : (
+            <View style={styles.chartContainer}>
+              <BarChart
+                data={chartData}
+                width={width - 60}
+                height={300}
+                chartConfig={chartConfig}
+                style={styles.chart}
+                verticalLabelRotation={0}
+                showValuesOnTopOfBars={true}
+                fromZero={true}
+                segments={4}
+                showBarTops={false}
+              />
+            </View>
+          )}
         </View>
 
       </ScrollView>

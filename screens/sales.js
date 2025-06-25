@@ -11,6 +11,8 @@ import {
   Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { db } from '../firebaseconfig';
+import { collection, getDocs, addDoc } from 'firebase/firestore';
 
 // Colores del tema
 const colors = {
@@ -27,29 +29,32 @@ const colors = {
 };
 
 export default function Sales() {
-  // Productos base de la pollería
-  const [products] = useState([
-    { id: 1, name: 'Porción', price: 12.00, category: 'pollo', icon: 'restaurant' },
-    { id: 2, name: 'Cuarto', price: 25.00, category: 'pollo', icon: 'restaurant' },
-    { id: 3, name: 'Medio Pollo', price: 45.00, category: 'pollo', icon: 'restaurant' },
-    { id: 4, name: 'Pollo Entero', price: 85.00, category: 'pollo', icon: 'restaurant' },
-    { id: 5, name: 'Coca Cola', price: 8.00, category: 'bebida', icon: 'wine' },
-    { id: 6, name: 'Fanta', price: 8.00, category: 'bebida', icon: 'wine' },
-    { id: 7, name: 'Sprite', price: 8.00, category: 'bebida', icon: 'wine' },
-    { id: 8, name: 'Agua', price: 5.00, category: 'bebida', icon: 'water' },
-  ]);
-
-  // Estado para las cantidades vendidas
+  const [products, setProducts] = useState([]);
   const [sales, setSales] = useState({});
   const [totalIncome, setTotalIncome] = useState(0);
+  const [loading, setLoading] = useState(false);
 
+  // Leer productos desde Firestore al iniciar
   useEffect(() => {
-    // Inicializar sales con 0 para todos los productos
-    const initialSales = {};
-    products.forEach(product => {
-      initialSales[product.id] = 0;
-    });
-    setSales(initialSales);
+    const fetchProducts = async () => {
+      setLoading(true);
+      try {
+        const querySnapshot = await getDocs(collection(db, 'productos'));
+        const productosFirestore = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productosFirestore);
+        // Inicializar sales con 0 para todos los productos
+        const initialSales = {};
+        productosFirestore.forEach(product => {
+          initialSales[product.id] = 0;
+        });
+        setSales(initialSales);
+      } catch (e) {
+        Alert.alert('Error', 'No se pudieron cargar los productos');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProducts();
   }, []);
 
   useEffect(() => {
@@ -98,13 +103,45 @@ export default function Sales() {
     );
   };
 
-  const saveSales = () => {
-    // Aquí guardarías las ventas en tu base de datos o AsyncStorage
-    Alert.alert(
-      'Ventas Guardadas',
-      `Se han guardado las ventas del día con un total de Bs. ${totalIncome.toFixed(2)}`,
-      [{ text: 'OK' }]
-    );
+  const saveSales = async () => {
+    if (totalIncome === 0) {
+      Alert.alert('Sin ventas', 'No hay ventas para guardar.');
+      return;
+    }
+    try {
+      // Obtener la fecha en zona horaria de Bolivia (GMT-4)
+      const now = new Date();
+      const boliviaOffset = -4 * 60; // minutos
+      const localUTC = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const boliviaDate = new Date(localUTC + boliviaOffset * 60000);
+      // Construir fecha yyyy-mm-dd con valores locales de Bolivia
+      const year = boliviaDate.getFullYear();
+      const month = String(boliviaDate.getMonth() + 1).padStart(2, '0');
+      const day = String(boliviaDate.getDate()).padStart(2, '0');
+      const fecha = `${year}-${month}-${day}`;
+      const productosVendidos = products.map(product => ({
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        price: product.price,
+        quantity: sales[product.id] || 0
+      })).filter(item => item.quantity > 0);
+      await addDoc(collection(db, 'ventas'), {
+        fecha,
+        total: totalIncome,
+        productos: productosVendidos,
+        createdAt: boliviaDate
+      });
+      Alert.alert('Ventas Guardadas', `Se han guardado las ventas del día con un total de Bs. ${totalIncome.toFixed(2)}`);
+      // Resetear ventas después de guardar
+      const resetSales = {};
+      products.forEach(product => {
+        resetSales[product.id] = 0;
+      });
+      setSales(resetSales);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo guardar la venta.');
+    }
   };
 
   const formatMoney = (amount) => {
@@ -205,22 +242,29 @@ export default function Sales() {
         </View>
 
         {/* Lista de productos */}
-        <ScrollView 
-          style={styles.productsContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.sectionTitle}>🍗 Productos de Pollo</Text>
-          {products
-            .filter(product => product.category === 'pollo')
-            .map(product => renderProductItem(product))
-          }
+        {loading ? (
+          <View style={{ alignItems: 'center', marginVertical: 30 }}>
+            <Ionicons name="hourglass" size={32} color={colors.primary} />
+            <Text style={{ color: colors.text, marginTop: 10 }}>Cargando productos...</Text>
+          </View>
+        ) : (
+          <ScrollView 
+            style={styles.productsContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.sectionTitle}>🍗 Productos de Pollo</Text>
+            {products
+              .filter(product => product.category === 'pollo')
+              .map(product => renderProductItem(product))
+            }
 
-          <Text style={styles.sectionTitle}>🥤 Bebidas</Text>
-          {products
-            .filter(product => product.category === 'bebida')
-            .map(product => renderProductItem(product))
-          }
-        </ScrollView>
+            <Text style={styles.sectionTitle}>🥤 Bebidas</Text>
+            {products
+              .filter(product => product.category === 'bebida')
+              .map(product => renderProductItem(product))
+            }
+          </ScrollView>
+        )}
 
         {/* Footer con total */}
         <View style={styles.footerContainer}>
